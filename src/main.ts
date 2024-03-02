@@ -31,9 +31,9 @@ type DT = {
 }
 
 const meta = [
-  { name: 'binance', color: '#ff1111' },
-  { name: 'bybit', color: '#3300ff' },
-  { name: 'okx', color: '#aaff00' },
+  { name: 'binance', color: '#ffe435' },
+  { name: 'bybit', color: '#f76040' },
+  { name: 'okx', color: '#4d1aac' },
 ]
 
 const initialSettings = {
