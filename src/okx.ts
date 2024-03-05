@@ -1,3 +1,5 @@
+import { eventBus } from './eventBus'
+
 const socketUrl = 'wss://wsaws.okx.com:8443/ws/v5/public'
 
 /*
@@ -37,19 +39,32 @@ const sub = {
   ],
 }
 
-const socket = new WebSocket(socketUrl)
+function connect() {
+  const socket = new WebSocket(socketUrl)
 
-socket.onopen = () => {
-  socket.send(JSON.stringify(sub))
-}
+  socket.onopen = () => {
+    socket.send(JSON.stringify(sub))
+  }
 
-const onOkxMessage = (handler: (message: Message) => void) => {
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data) as Message
-    if (message.arg.channel === 'trades' && Array.isArray(message.data)) {
-      handler(message)
+
+    if (message.arg.channel === 'trades') {
+      message.data.forEach((trade) => {
+        eventBus.emit('trade', {
+          exchange: 'okx',
+          isBuy: trade.side === 'buy',
+          price: parseFloat(trade.px),
+          quantity: parseFloat(trade.sz),
+          timestamp: +trade.ts,
+        })
+      })
     }
+  }
+
+  socket.onclose = () => {
+    connect()
   }
 }
 
-export { onOkxMessage }
+connect()

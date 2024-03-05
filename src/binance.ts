@@ -1,3 +1,5 @@
+import { eventBus } from './eventBus'
+
 const socketUrl = 'wss://fstream.binance.com/ws/btcusdt@aggTrade'
 
 type Message = {
@@ -13,15 +15,26 @@ type Message = {
   m: boolean // is the buyer the market maker
 }
 
-const socket = new WebSocket(socketUrl)
+function connect() {
+  const socket = new WebSocket(socketUrl)
 
-const onBinanceMessage = (handler: (message: Message) => void) => {
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data) as Message
+
     if (message.e === 'aggTrade') {
-      handler(message)
+      eventBus.emit('trade', {
+        exchange: 'binance',
+        isBuy: !message.m,
+        price: parseFloat(message.p),
+        quantity: parseFloat(message.q),
+        timestamp: message.T,
+      })
     }
+  }
+
+  socket.onclose = () => {
+    connect()
   }
 }
 
-export { onBinanceMessage }
+connect()

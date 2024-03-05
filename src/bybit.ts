@@ -1,7 +1,5 @@
 const socketUrl = 'wss://stream.bybit.com/v5/public/linear'
-import { EventEmitter } from 'eventemitter3'
-
-const events = new EventEmitter()
+import { eventBus } from './eventBus'
 
 /* 
 topic	string	Topic name
@@ -48,23 +46,24 @@ function connect() {
   }
 
   socket.onmessage = (event) => {
-    events.emit('message', event)
+    const message = JSON.parse(event.data) as Message
+
+    if (message.topic === 'publicTrade.BTCUSDT') {
+      message.data.forEach((trade) => {
+        eventBus.emit('trade', {
+          exchange: 'bybit',
+          isBuy: trade.S === 'Buy',
+          price: parseFloat(trade.p),
+          quantity: parseFloat(trade.v),
+          timestamp: trade.T,
+        })
+      })
+    }
   }
 
   socket.onclose = () => {
-    setTimeout(connect, 1000)
+    connect()
   }
 }
 
 connect()
-
-const onBybitMessage = (handler: (message: Message) => void) => {
-  events.on('message', (event) => {
-    const message = JSON.parse(event.data) as Message
-    if (message.topic === 'publicTrade.BTCUSDT') {
-      handler(message)
-    }
-  })
-}
-
-export { onBybitMessage }

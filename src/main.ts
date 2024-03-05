@@ -1,9 +1,10 @@
 import './style.css'
 import './stats'
-import { onBinanceMessage } from './binance'
-import { onBybitMessage } from './bybit'
-import { onOkxMessage } from './okx'
 import * as dat from 'dat.gui'
+import { eventBus } from './eventBus'
+import './binance'
+import './bybit'
+// import './okx'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas1')!
 
@@ -28,6 +29,8 @@ let startTime = Date.now()
 type DT = {
   p: number // price
   t: number // timestamp in ms
+  b: boolean // is buy
+  q: number // quantity
 }
 
 const meta = [
@@ -40,10 +43,13 @@ const initialSettings = {
   autoMode: false,
   priceCorrection: {} as Record<string, number>,
   colors: {} as Record<string, string>,
+  volumeLimit: 10,
 }
 
 const settings: typeof initialSettings =
   JSON.parse(localStorage.getItem('gui_meta') || 'null') || initialSettings
+
+settings.volumeLimit ??= 10
 
 window.onbeforeunload = () => {
   localStorage.setItem('gui_meta', JSON.stringify(settings))
@@ -51,16 +57,16 @@ window.onbeforeunload = () => {
 
 const DATA: DT[][] = [[], [], []]
 
-const pp = (p: number) => -(p - DATA[0][0]?.p || 0) * MUTTIPLY_Y + SCREEN_WIDTH / 2
-const pt = (t: number) => (t - startTime) / 300
+const SCALE_Y = 4
+
+const pp = (p: number) => -(p - DATA[1][0]?.p || 0) * SCALE_Y + SCREEN_WIDTH / 2
+const pt = (t: number) => (t - startTime) / 100
 
 let offsetX = 0
 let offsetY = 0
 
 const cx = (x: number) => x + offsetX
 const cy = (y: number) => y + offsetY
-
-let autoMode = false
 
 let dragging = false
 canvas.addEventListener('mousedown', () => (dragging = true))
@@ -69,14 +75,15 @@ window.addEventListener('mouseup', () => (dragging = false))
 window.addEventListener('mousemove', (e) => {
   if (!dragging) return
   offsetX += e.movementX
-  if (!autoMode) {
+  if (!settings.autoMode) {
     offsetY += e.movementY
   }
 })
 
 const gui = new dat.GUI()
 
-gui.add(settings, 'autoMode').onChange((v) => (autoMode = v))
+gui.add(settings, 'autoMode').onChange((v) => (settings.autoMode = v))
+gui.add(settings, 'volumeLimit', 0, 30).onChange((v) => (settings.volumeLimit = v))
 
 const priceCorrGUI = gui.addFolder('price correction')
 const colorsGUI = gui.addFolder('colors')
@@ -97,7 +104,27 @@ meta.forEach((m, i) => {
 })
 
 requestAnimationFrame(function render() {
+  const mainIndex = 1
+  if (!DATA[mainIndex].length) {
+    return requestAnimationFrame(render)
+  }
   ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  let buyes = 0
+  let sells = 0
+  for (let i = 0; i < DATA[mainIndex].length; i++) {
+    if (DATA[mainIndex][i].q > settings.volumeLimit) {
+      if (DATA[mainIndex][i].b) {
+        buyes += DATA[mainIndex][i].q
+      } else {
+        sells += DATA[mainIndex][i].q
+      }
+    }
+  }
+
+  ctx.fillStyle = 'white'
+  ctx.font = '20px Arial'
+  ctx.fillText(`b ${~~buyes} s ${~~sells}`, 100, 100)
 
   for (let i = 0; i < DATA.length; i++) {
     const exchange = DATA[i]
@@ -123,29 +150,27 @@ requestAnimationFrame(function render() {
   requestAnimationFrame(render)
 })
 
-const MUTTIPLY_Y = 4
-
-onBinanceMessage((message) => {
-  DATA[0].push({
-    p: parseFloat(message.p),
-    t: message.T,
-  })
-})
-
-onBybitMessage((message) => {
-  DATA[1].push(
-    ...message.data?.map((x) => ({
-      p: parseFloat(x.p),
-      t: x.T,
-    }))
-  )
-})
-
-onOkxMessage((message) => {
-  DATA[2].push(
-    ...message.data.map((x) => ({
-      p: parseFloat(x.px),
-      t: +x.ts,
-    }))
-  )
+eventBus.on('trade', (trade) => {
+  if (trade.exchange === 'binance') {
+    DATA[0].push({
+      p: trade.price,
+      t: trade.timestamp,
+      b: trade.isBuy,
+      q: trade.quantity,
+    })
+  } else if (trade.exchange === 'bybit') {
+    DATA[1].push({
+      p: trade.price,
+      t: trade.timestamp,
+      b: trade.isBuy,
+      q: trade.quantity,
+    })
+  } else if (trade.exchange === 'okx') {
+    DATA[2].push({
+      p: trade.price,
+      t: trade.timestamp,
+      b: trade.isBuy,
+      q: trade.quantity,
+    })
+  }
 })
